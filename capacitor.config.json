@@ -1,0 +1,14 @@
+{
+  "appId": "com.yourname.inkisland",
+  "appName": "Ink Island",
+  "webDir": "www",
+  "server": {
+    "allowNavigation": []
+  },
+  "ios": {
+    "contentInset": "always",
+    "allowsLinkPreview": false,
+    "scrollEnabled": false,
+    "backgroundColor": "#000000"
+  }
+}
