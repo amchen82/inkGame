@@ -1,5 +1,5 @@
 {
-  "appId": "com.yourname.inkisland",
+  "appId": "com.infinityknowledges.inkisland",
   "appName": "Ink Island",
   "webDir": "www",
   "server": {
@@ -10,5 +10,12 @@
     "allowsLinkPreview": false,
     "scrollEnabled": false,
     "backgroundColor": "#000000"
+  },
+  "plugins": {
+    "AdMob": {
+      "appId": "ca-app-pub-5664448531890756~4902994382",
+      "initializeForTesting": false,
+      "requestTrackingAuthorization": false
+    }
   }
 }

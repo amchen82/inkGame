@@ -177,7 +177,7 @@ html,body { height:100%; overflow:hidden; background:#d4efe6; font-family:-apple
   <div id="titleContent">
     <div id="titleLogo">🏝️ INK ISLAND</div>
     <div id="titleSub">Paint · Claim · Conquer</div>
-    <div id="titleTagline">Drag to steer. Chase tails to conquer.<br>Loop around land to claim it.<br>7 worlds, all unlocked. Endless fun.</div>
+    <div id="titleTagline">Point or drag to steer. Chase tails to conquer.<br>Loop around land to claim it.<br>7 worlds, all unlocked. Endless fun.</div>
 
     <div id="lvlGrid"></div>
     <button id="titlePlayBtn">▶ Start Level 1</button>
@@ -318,7 +318,7 @@ function T(){ return THEMES[currentLevel]||THEMES[0]; }
 
 
 // ====================== CONFIG ======================
-const GRID=72, CELL=26, SPEED=7.2, TURN=9;
+const GRID=72, CELL=26, SPEED=7.2, TURN=11;
 const PLAYER=1;
 const PALETTE={
   1:{name:'You',   hue:160},
@@ -454,21 +454,33 @@ addEventListener('keydown',e=>{
   const k={ArrowRight:0,d:0,ArrowDown:Math.PI/2,s:Math.PI/2,ArrowLeft:Math.PI,a:Math.PI,ArrowUp:-Math.PI/2,w:-Math.PI/2}[e.key];
   if(k!==undefined){ P().target=k; P().waiting=false; }
 });
-let tStart=null;
-addEventListener('touchstart',e=>{ tStart=e.touches[0]; },{passive:true});
-addEventListener('touchmove',e=>{
-  if(!tStart) return;
-  const t=e.touches[0],dx=t.clientX-tStart.clientX,dy=t.clientY-tStart.clientY;
-  if(Math.hypot(dx,dy)>14){ P().target=Math.atan2(dy,dx); P().waiting=false; tStart=t; }
-},{passive:true});
-let mDown=false,mPrev=null;
-addEventListener('mousedown',e=>{ mDown=true; mPrev=e; });
-addEventListener('mouseup',()=>{ mDown=false; });
-addEventListener('mousemove',e=>{
-  if(!mDown||!mPrev) return;
-  const dx=e.clientX-mPrev.clientX,dy=e.clientY-mPrev.clientY;
-  if(Math.hypot(dx,dy)>10){ P().target=Math.atan2(dy,dx); P().waiting=false; mPrev=e; }
+let activeTouchPointer=null;
+function steerToward(clientX,clientY){
+  if(!running||!entities.length||!P().alive) return;
+  // The camera keeps the player centered, so screen center is the player's
+  // position. Absolute aiming avoids the jitter caused by measuring many tiny
+  // drag segments.
+  const dx=clientX-innerWidth/2,dy=clientY-innerHeight/2;
+  if(Math.hypot(dx,dy)<18) return;
+  P().target=Math.atan2(dy,dx);
+  P().waiting=false;
+}
+canvas.addEventListener('pointerdown',e=>{
+  if(e.pointerType!=='mouse') activeTouchPointer=e.pointerId;
+  canvas.setPointerCapture?.(e.pointerId);
+  steerToward(e.clientX,e.clientY);
 });
+canvas.addEventListener('pointermove',e=>{
+  // Mouse follows the cursor without requiring a click. Touch and pen follow
+  // only the pointer currently held against the screen.
+  if(e.pointerType==='mouse'||e.pointerId===activeTouchPointer)
+    steerToward(e.clientX,e.clientY);
+});
+function releasePointer(e){
+  if(e.pointerId===activeTouchPointer) activeTouchPointer=null;
+}
+canvas.addEventListener('pointerup',releasePointer);
+canvas.addEventListener('pointercancel',releasePointer);
 
 // ====================== MOVEMENT ======================
 function isWater(fx,fy){
@@ -1144,7 +1156,7 @@ function draw(t){
   if(p.waiting&&p.alive){
     ctx.fillStyle='rgba(255,255,255,'+(0.6+Math.sin(t/300)*0.3)+')';
     ctx.font='bold 16px -apple-system,sans-serif'; ctx.textAlign='center';
-    ctx.fillText('drag to move',p.px*CELL,p.py*CELL+CELL*2.6);
+    ctx.fillText('point or drag to move',p.px*CELL,p.py*CELL+CELL*2.6);
   }
 
   // floating texts
@@ -1226,9 +1238,88 @@ document.getElementById('menuBtn').addEventListener('click',function(){ hideAllO
 document.getElementById('introMenuBtn').addEventListener('click',function(){ hideAllOverlays(); showTitleScreen(); });
 document.getElementById('hudMenuBtn').addEventListener('click',function(){ running=false; hideAllOverlays(); showTitleScreen(); });
 
+// ====================== ADMOB ======================
+const ADMOB_BANNER_UNIT_ID = 'ca-app-pub-5664448531890756/6229752025';
+const ADMOB_BANNER_TEST_UNIT_ID = 'ca-app-pub-3940256099942544/2934735716';
+const ADMOB_TEST_MODE = false;
+let admobRequestInFlight = false;
+let admobRetryDelayMs = 10000;
+const ADMOB_MAX_RETRY_DELAY_MS = 120000;
+
+function setupAdMobBannerLogging(admob){
+  try {
+    admob.addListener('bannerAdLoaded', ()=>{
+      admobRetryDelayMs = 10000;
+      console.log('AdMob banner loaded');
+    });
+    admob.addListener('bannerAdImpression', ()=>console.log('AdMob banner impression'));
+    admob.addListener('bannerAdOpened', ()=>console.log('AdMob banner opened'));
+    admob.addListener('bannerAdClosed', ()=>console.log('AdMob banner closed'));
+    admob.addListener('bannerAdSizeChanged', (info)=>console.log('AdMob banner size changed', info));
+    admob.addListener('bannerAdFailedToLoad', async (err)=>{
+      console.warn('AdMob banner failed to load', err);
+      await new Promise(r=>setTimeout(r,admobRetryDelayMs));
+      admobRetryDelayMs = Math.min(admobRetryDelayMs * 2, ADMOB_MAX_RETRY_DELAY_MS);
+      await requestBanner(admob);
+    });
+  } catch (err) {
+    console.warn('AdMob listener setup failed', err);
+  }
+}
+
+async function requestBanner(admob){
+  if(admobRequestInFlight) return;
+  admobRequestInFlight = true;
+  const adUnit = ADMOB_TEST_MODE ? ADMOB_BANNER_TEST_UNIT_ID : ADMOB_BANNER_UNIT_ID;
+  try {
+    await admob.showBanner({
+      adId: adUnit,
+      adSize: 'BANNER',
+      position: 'BOTTOM_CENTER',
+      margin: 8,
+      isTesting: ADMOB_TEST_MODE,
+      npa: true
+    });
+    console.log('AdMob banner requested', { adUnit, testMode: ADMOB_TEST_MODE, npa: true });
+  } finally {
+    admobRequestInFlight = false;
+  }
+}
+
+async function getAdMobPluginReady(maxWaitMs){
+  const started = Date.now();
+  while(Date.now() - started < maxWaitMs){
+    const cap = window.Capacitor;
+    if(cap && cap.getPlatform && cap.getPlatform() === 'ios' && cap.Plugins && cap.Plugins.AdMob)
+      return cap.Plugins.AdMob;
+    await new Promise(r=>setTimeout(r,120));
+  }
+  return null;
+}
+
+async function initAdMobAds(){
+  const admob = await getAdMobPluginReady(9000);
+  if(!admob){
+    console.warn('AdMob plugin not ready on iOS');
+    return;
+  }
+
+  try {
+    setupAdMobBannerLogging(admob);
+    await admob.initialize({
+      initializeForTesting: ADMOB_TEST_MODE,
+      requestTrackingAuthorization: false
+    });
+    await requestBanner(admob);
+  } catch(err){
+    console.warn('AdMob initialization failed', err);
+  }
+}
+
 // ====================== INIT ======================
 loadProg();
 showTitleScreen();
+window.addEventListener('load',()=>{ initAdMobAds(); },{ once:true });
 </script>
 </body>
 </html>
